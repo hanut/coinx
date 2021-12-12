@@ -1,6 +1,8 @@
-import 'dart:io';
-
 import 'package:crypto_price/coin_data.dart';
+import 'package:crypto_price/data-models/get_rate_response.dart';
+import 'package:crypto_price/network.dart';
+import 'package:crypto_price/widgets/currency_picker.dart';
+import 'package:crypto_price/widgets/rate_list.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
@@ -13,57 +15,45 @@ class PriceScreen extends StatefulWidget {
 
 class _PriceScreenState extends State<PriceScreen> {
   String _currency = currenciesList[0];
+  bool _isLoading = true;
+  List<GetRateResponse> _rates = [];
 
-  Widget _getPickerByPlatform() {
-    if (!Platform.isAndroid) {
-      return DropdownButton<String>(
-        value: _currency,
-        onChanged: (selectedValue) {
-          setState(() {
-            _currency = selectedValue ?? currenciesList[0];
-          });
-        },
-        icon: const Icon(Icons.arrow_downward),
-        items: currenciesList.map<DropdownMenuItem<String>>((currency) {
-          return DropdownMenuItem(
-            child: Center(
-              child: Text(
-                currency,
-                style: const TextStyle(
-                  fontSize: 20,
-                ),
-              ),
-            ),
-            value: currency,
-          );
-        }).toList(),
-      );
-    } else {
-      return CupertinoPicker(
-        itemExtent: 60,
-        backgroundColor: Colors.lightBlue,
-        onSelectedItemChanged: (index) {
-          setState(() {
-            _currency = currenciesList[index];
-          });
-        },
-        children: currenciesList.map((currency) {
-          return Container(
-            margin: const EdgeInsets.symmetric(vertical: 5),
-            child: Text(
-              currency,
-              style: const TextStyle(color: Colors.white, fontSize: 32),
-            ),
-          );
-        }).toList(),
-      );
+  @override
+  void initState() {
+    super.initState();
+    getRateForAllScripts();
+  }
+
+  void getRateForAllScripts({bool showLoader = false}) async {
+    if (showLoader) {
+      setState(() {
+        _isLoading = true;
+      });
     }
+    List<GetRateResponse> rates = [];
+    try {
+      for (var script in cryptoList) {
+        var tmp = await getRate(script: script, currency: _currency);
+        rates.add(tmp);
+      }
+    } catch (e) {
+      final snackBar = SnackBar(
+        content: Text(e.toString()),
+        duration: const Duration(seconds: 3),
+      );
+
+      // Find the ScaffoldMessenger in the widget tree
+      // and use it to show a SnackBar.
+      ScaffoldMessenger.of(context).showSnackBar(snackBar);
+    }
+    setState(() {
+      _rates = rates;
+      _isLoading = false;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    Widget currencyPicker = _getPickerByPlatform();
-
     return Scaffold(
       appBar: AppBar(
         title: const Center(
@@ -73,38 +63,35 @@ class _PriceScreenState extends State<PriceScreen> {
         )),
       ),
       body: Column(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        mainAxisAlignment: _isLoading
+            ? MainAxisAlignment.center
+            : MainAxisAlignment.spaceBetween,
         crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          Padding(
-            padding: const EdgeInsets.fromLTRB(18.0, 18.0, 18.0, 0),
-            child: Card(
-              color: Colors.lightBlueAccent,
-              elevation: 5.0,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10.0),
-              ),
-              child: const Padding(
-                padding: EdgeInsets.symmetric(vertical: 15.0, horizontal: 28.0),
-                child: Text(
-                  '1 BTC = ? USD',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 20.0,
-                    color: Colors.white,
+        children: _isLoading
+            ? [
+                const Center(
+                  child: SizedBox(
+                    height: 50,
+                    width: 50,
+                    child: CircularProgressIndicator(
+                      color: Colors.redAccent,
+                      strokeWidth: 5,
+                    ),
                   ),
                 ),
-              ),
-            ),
-          ),
-          Container(
-            height: 150.0,
-            alignment: Alignment.center,
-            padding: const EdgeInsets.only(bottom: 30.0),
-            color: Colors.lightBlue,
-            child: currencyPicker,
-          ),
-        ],
+              ]
+            : <Widget>[
+                RateList(rates: _rates),
+                CurrencyPicker(
+                  currency: _currency,
+                  selectValue: (String selectedValue) {
+                    setState(() {
+                      _currency = selectedValue;
+                    });
+                    getRateForAllScripts(showLoader: true);
+                  },
+                ),
+              ],
       ),
     );
   }
